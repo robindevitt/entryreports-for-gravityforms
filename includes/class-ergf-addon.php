@@ -76,6 +76,8 @@ class ERGF_AddOn extends GFFeedAddOn {
 	 */
 	protected $_short_title = 'Entry Reports'; // phpcs:ignore PSR2.Classes.PropertyDeclaration.Underscore
 
+	protected $_icon = '';
+
 	/**
 	 * Capabilities required to manage report feeds and to uninstall the add-on.
 	 *
@@ -132,11 +134,25 @@ class ERGF_AddOn extends GFFeedAddOn {
 	}
 
 	/**
-	 * Uninstall the add-on, clearing the scheduled cron event first.
+	 * Uninstall the add-on, clearing the scheduled cron event first. Only runs via Gravity
+	 * Forms' own "Uninstall" link in Form Settings > Entry Reports - deleting the plugin
+	 * directly from the Plugins screen instead goes through uninstall.php, which clears the
+	 * same cron event and feed data independently since this class isn't loaded on that path.
 	 */
 	public function uninstall() {
 		wp_clear_scheduled_hook( self::CRON_HOOK );
 		parent::uninstall();
+	}
+
+	/**
+	 * Return the plugin's icon for the plugin/form settings menu.
+	 *
+	 * @since 4.5
+	 *
+	 * @return string
+	 */
+	public function get_menu_icon() {
+		return 'dashicons-media-spreadsheet';
 	}
 
 

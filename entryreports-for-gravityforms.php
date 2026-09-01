@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name:        Entry Reports for Gravity Forms
- * Plugin URI:         https://example.com/
+ * Plugin URI:         https://github.com/robindevitt/entryreports-for-gravityforms
  * Description:        Emails scheduled (weekly or monthly) summary reports of Gravity Forms entries to chosen recipients.
  * Version:            1.0.0
  * Requires at least:  6.0
