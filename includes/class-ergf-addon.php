@@ -384,6 +384,8 @@ class ERGF_AddOn extends GFFeedAddOn {
 						'name'                => 'recipients',
 						'label'               => esc_html__( 'Recipient Email Addresses', 'entryreports-for-gravityforms' ),
 						'type'                => 'text',
+						'input_type'          => 'email',
+						'multiple'            => 'multiple',
 						'class'               => 'medium',
 						'required'            => true,
 						'tooltip'             => esc_html__( 'Enter recipient email addresses, separated by commas.', 'entryreports-for-gravityforms' ),
@@ -438,8 +440,83 @@ class ERGF_AddOn extends GFFeedAddOn {
 							),
 						),
 					),
+					array(
+						'name'          => 'csv_fields',
+						'label'         => esc_html__( 'CSV Fields to Include', 'entryreports-for-gravityforms' ),
+						'type'          => 'checkbox',
+						'data_format'   => 'array',
+						'choices'       => $this->get_csv_field_choices(),
+						'default_value' => $this->get_csv_field_keys(),
+						'description'   => $this->get_csv_field_toggle_markup(),
+						'tooltip'       => esc_html__( 'Choose which fields to include in the attached CSV, the same way you would when exporting entries manually. All fields are included by default.', 'entryreports-for-gravityforms' ),
+						'dependency'    => array(
+							'live'   => true,
+							'fields' => array(
+								array(
+									'field'  => 'attach_entries',
+									'values' => array( '1' ),
+								),
+							),
+						),
+					),
 				),
 			),
+		);
+	}
+
+	/**
+	 * The selectable CSV column choices for the current form, mirroring what Gravity Forms' own
+	 * "Export Entries" screen offers - see ERGF_Report_Generator::get_export_columns().
+	 *
+	 * @return array
+	 */
+	public function get_csv_field_choices() {
+		$form = $this->get_current_form();
+
+		if ( ! $form ) {
+			return array();
+		}
+
+		$choices = array();
+
+		foreach ( ERGF_Report_Generator::get_export_columns( $form ) as $column ) {
+			$choices[] = array(
+				'name'  => $column['key'],
+				'label' => $column['label'],
+			);
+		}
+
+		return $choices;
+	}
+
+	/**
+	 * Every selectable CSV column key for the current form, used as the "CSV Fields to Include"
+	 * setting's default value so a newly created feed starts with every field selected - matching
+	 * a manual export's default of everything being checked.
+	 *
+	 * @return array
+	 */
+	public function get_csv_field_keys() {
+		return wp_list_pluck( $this->get_csv_field_choices(), 'name' );
+	}
+
+	/**
+	 * "Select All" / "Select None" links rendered above the "CSV Fields to Include" checkboxes.
+	 * The Settings API's array-format checkbox field has no built-in toggle-all support, so this
+	 * is a couple of plain onclick handlers rather than a separate enqueued script - the field
+	 * names are HTML-entity-escaped inside the onclick attribute so the browser decodes them back
+	 * to plain double quotes before the jQuery selector runs.
+	 *
+	 * @return string
+	 */
+	public function get_csv_field_toggle_markup() {
+		$selector = 'input[name=&quot;_gform_setting_csv_fields[]&quot;]';
+
+		return sprintf(
+			'<p><a href="#" onclick="jQuery(\'%1$s\').prop(\'checked\', true); return false;">%2$s</a> | <a href="#" onclick="jQuery(\'%1$s\').prop(\'checked\', false); return false;">%3$s</a></p>',
+			$selector,
+			esc_html__( 'Select All', 'entryreports-for-gravityforms' ),
+			esc_html__( 'Select None', 'entryreports-for-gravityforms' )
 		);
 	}
 

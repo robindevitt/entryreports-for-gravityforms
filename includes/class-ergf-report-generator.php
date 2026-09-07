@@ -239,27 +239,97 @@ class ERGF_Report_Generator {
 	}
 
 	/**
-	 * Builds a CSV file of the given entries, one row per entry with a column per form field.
-	 * The caller is responsible for deleting the file once it's done with it.
+	 * Returns every column build_entries_csv() can produce for a form's entries, in export order:
+	 * one entry per top-level field (or per sub-input, for fields whose value is split across
+	 * inputs - see get_entry_inputs()), followed by Gravity Forms' standard entry info fields
+	 * (payment/tracking data) and any custom entry meta registered by other add-ons via the
+	 * gform_entry_meta filter (e.g. Advanced Post Creation, User Registration). This is the same
+	 * set of fields the manual "Export Entries" screen offers, and is used both to build the CSV
+	 * and to list the choices on the feed's "CSV Fields to Include" setting, so the two always
+	 * agree on what a given key means.
 	 *
-	 * @param array $form    The form the entries belong to.
-	 * @param array $entries The entries to include.
+	 * @param array $form The form to list columns for.
 	 *
-	 * @return string|null The path to the generated CSV file, or null if there are no entries.
+	 * @return array Each item: array( 'key' => string, 'label' => string, and either
+	 *               'field' + 'input_id' for a form field, or 'meta' for an entry info/meta field ).
 	 */
-	public static function build_entries_csv( $form, $entries ) {
-		if ( empty( $entries ) ) {
-			return null;
-		}
-
-		$fields = array();
+	public static function get_export_columns( $form ) {
+		$columns = array();
 
 		foreach ( $form['fields'] as $field ) {
 			if ( in_array( $field->type, array( 'page', 'section', 'html', 'captcha' ), true ) ) {
 				continue;
 			}
 
-			$fields[] = $field;
+			$entry_inputs = $field->get_entry_inputs();
+
+			if ( is_array( $entry_inputs ) && ! empty( $entry_inputs ) ) {
+				foreach ( $entry_inputs as $input ) {
+					if ( ! empty( $input['isHidden'] ) ) {
+						continue;
+					}
+
+					$columns[] = array(
+						'key'      => (string) $input['id'],
+						'label'    => GFCommon::get_label( $field, $input['id'] ),
+						'field'    => $field,
+						'input_id' => $input['id'],
+					);
+				}
+			} else {
+				$columns[] = array(
+					'key'      => (string) $field->id,
+					'label'    => $field->get_field_label( true, '' ),
+					'field'    => $field,
+					'input_id' => $field->id,
+				);
+			}
+		}
+
+		$info_fields = array(
+			'created_by'     => esc_html__( 'Created By (User Id)', 'entryreports-for-gravityforms' ),
+			'date_updated'   => esc_html__( 'Date Updated', 'entryreports-for-gravityforms' ),
+			'source_url'     => esc_html__( 'Source Url', 'entryreports-for-gravityforms' ),
+			'transaction_id' => esc_html__( 'Transaction Id', 'entryreports-for-gravityforms' ),
+			'payment_amount' => esc_html__( 'Payment Amount', 'entryreports-for-gravityforms' ),
+			'payment_date'   => esc_html__( 'Payment Date', 'entryreports-for-gravityforms' ),
+			'payment_status' => esc_html__( 'Payment Status', 'entryreports-for-gravityforms' ),
+			'post_id'        => esc_html__( 'Post Id', 'entryreports-for-gravityforms' ),
+			'user_agent'     => esc_html__( 'User Agent', 'entryreports-for-gravityforms' ),
+			'ip'             => esc_html__( 'User IP', 'entryreports-for-gravityforms' ),
+		);
+
+		foreach ( GFFormsModel::get_entry_meta( rgar( $form, 'id' ) ) as $meta_key => $meta ) {
+			$info_fields[ $meta_key ] = rgar( $meta, 'label', $meta_key );
+		}
+
+		foreach ( $info_fields as $meta_key => $label ) {
+			$columns[] = array(
+				'key'   => $meta_key,
+				'label' => $label,
+				'meta'  => $meta_key,
+			);
+		}
+
+		return $columns;
+	}
+
+	/**
+	 * Builds a CSV file of the given entries, one row per entry with a column per included field.
+	 * The caller is responsible for deleting the file once it's done with it.
+	 *
+	 * @param array      $form            The form the entries belong to.
+	 * @param array      $entries         The entries to include.
+	 * @param array|null $selected_fields The column keys (see get_export_columns()) to include, in
+	 *                                     the order they were selected, or null to include every
+	 *                                     column - used for feeds saved before fields became
+	 *                                     selectable, which had no way to exclude any of them.
+	 *
+	 * @return string|null The path to the generated CSV file, or null if there are no entries.
+	 */
+	public static function build_entries_csv( $form, $entries, $selected_fields = null ) {
+		if ( empty( $entries ) ) {
+			return null;
 		}
 
 		if ( ! function_exists( 'wp_tempnam' ) ) {
@@ -276,10 +346,28 @@ class ERGF_Report_Generator {
 
 		$file = fopen( $file_path, 'w' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen
 
+		$columns = self::get_export_columns( $form );
+
+		if ( is_array( $selected_fields ) ) {
+			$columns_by_key = array();
+
+			foreach ( $columns as $column ) {
+				$columns_by_key[ $column['key'] ] = $column;
+			}
+
+			$columns = array();
+
+			foreach ( $selected_fields as $key ) {
+				if ( isset( $columns_by_key[ $key ] ) ) {
+					$columns[] = $columns_by_key[ $key ];
+				}
+			}
+		}
+
 		$header = array( esc_html__( 'Entry ID', 'entryreports-for-gravityforms' ), esc_html__( 'Date Submitted', 'entryreports-for-gravityforms' ) );
 
-		foreach ( $fields as $field ) {
-			$header[] = $field->get_field_label( true, '' );
+		foreach ( $columns as $column ) {
+			$header[] = $column['label'];
 		}
 
 		fputcsv( $file, $header );
@@ -292,8 +380,18 @@ class ERGF_Report_Generator {
 				date_i18n( $date_time_format, strtotime( rgar( $entry, 'date_created' ) . ' UTC' ) ),
 			);
 
-			foreach ( $fields as $field ) {
-				$row[] = $field->get_value_export( $entry, $field->id, false, true );
+			foreach ( $columns as $column ) {
+				if ( isset( $column['meta'] ) ) {
+					$value = rgar( $entry, $column['meta'] );
+
+					if ( in_array( $column['meta'], array( 'date_updated', 'payment_date' ), true ) && ! empty( $value ) ) {
+						$value = date_i18n( $date_time_format, strtotime( $value . ' UTC' ) );
+					}
+
+					$row[] = $value;
+				} else {
+					$row[] = $column['field']->get_value_export( $entry, $column['input_id'], false, true );
+				}
 			}
 
 			fputcsv( $file, $row );
@@ -355,7 +453,12 @@ class ERGF_Report_Generator {
 		$from_name  = get_bloginfo( 'name' );
 		$to         = implode( ',', $recipients );
 
-		$attachment_path = $attach_entries ? self::build_entries_csv( $form, $entries ) : null;
+		// Feeds saved before fields became selectable have no csv_fields meta at all - treat that
+		// (as opposed to a deliberately saved empty selection) as "include every column".
+		$feed_meta       = is_array( rgar( $feed, 'meta' ) ) ? $feed['meta'] : array();
+		$selected_fields = array_key_exists( 'csv_fields', $feed_meta ) ? (array) $feed_meta['csv_fields'] : null;
+
+		$attachment_path = $attach_entries ? self::build_entries_csv( $form, $entries, $selected_fields ) : null;
 		$attachments     = $attachment_path ? array( $attachment_path ) : array();
 
 		// GFCommon::send_email() doesn't return a success/failure value, so capture errors via its hooks instead.
