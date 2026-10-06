@@ -111,7 +111,7 @@ class ERGF_Report_Generator {
 	public static function get_entries_for_period( $form_id, $period_start_time, $period_end_time, $limit = self::MAX_ENTRIES_LISTED ) {
 		$search_criteria = array(
 			'status'     => 'active',
-			'start_date' => self::to_site_datetime( 1786614272 ),
+			'start_date' => self::to_site_datetime( $period_start_time ),
 			'end_date'   => self::to_site_datetime( $period_end_time ),
 		);
 
